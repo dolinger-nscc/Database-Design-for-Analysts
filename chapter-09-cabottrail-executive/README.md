@@ -114,7 +114,7 @@ A good database designer does not proceed on ambiguous requirements. This sectio
 *A:* Yes — a separate `Period` table with CalendarYear and MonthNumber as the PK, plus MonthName and other calendar attributes, will make queries cleaner than storing year and month as plain integers in the summary table.
 
 **Q: Should the database include all time or only recent data?**
-*A:* All available history — 2022 through the current month. The database must be able to support year-over-year comparisons going back to the first full year of data.
+*A:* All available history — January 2022 through the most recent complete month. The database must be able to support year-over-year comparisons going back to the first full year of data.
 
 ### 2.2 The Refined Requirements
 
@@ -123,8 +123,8 @@ After clarification, the requirements are:
 1. **Grain:** One row per (SalesTerritory, CategoryName, CalendarYear, MonthNumber)
 2. **Measures per row:** TotalRevenue, TotalGrossProfit, InvoiceCount, CustomerCount, SalesLineCount
 3. **Dimensions:** Period (CalendarYear + MonthNumber), SalesTerritory (string, from DW), ProductCategory (CategoryName)
-4. **History:** All available data (2022–current)
-5. **Refresh:** Monthly full replacement (TRUNCATE + INSERT)
+4. **History:** All available data (January 2022 through the last complete month)
+5. **Refresh:** Monthly full replacement (clear the tables, then INSERT)
 6. **YoY comparison:** Delivered as a view, not stored columns
 7. **No individual transaction data** — summaries only
 
@@ -259,7 +259,7 @@ PK = `PeriodKey`.
 - `FiscalYearNumber`, `FiscalQuarterNumber` — facts about the period's position in the fiscal calendar. ✓ Direct
 - `QuarterLabel` — derived from `FiscalYearNumber` and `FiscalQuarterNumber`. This is a derived attribute. Design choice: compute it as a computed column or store it for query convenience.
 
-**Period is in 3NF with a pragmatic exception for MonthName.** Acceptable for a reference table with 48 rows.
+**Period is in 3NF with a pragmatic exception for MonthName.** Acceptable for a small reference table (one row per month of history).
 
 ### 5.3 Checking ProductCategory
 
@@ -291,7 +291,10 @@ PK = `CategoryKey`.
 | PeriodKey, CategoryKey, SummaryKey | `INT NOT NULL IDENTITY(1,1)` | Surrogate PKs |
 | CalendarYear, FiscalYearNumber | `SMALLINT NOT NULL` | 2-byte; year range 2000–2100 easily fits |
 | MonthNumber, FiscalQuarterNumber | `TINYINT NOT NULL` | 1-byte; 1–12 or 1–4 |
-| MonthName, QuarterLabel, CategoryName | `NVARCHAR(20)` | Short descriptive labels |
+| MonthName | `NVARCHAR(10) NOT NULL` | Longest value, 'September', is 9 characters |
+| YearMonthLabel | `NVARCHAR(10) NOT NULL` | Format 'Mar 2024' — 8 characters |
+| QuarterLabel | `NVARCHAR(12) NOT NULL` | Format 'Q1 2024/25' — 10 characters |
+| CategoryName | `NVARCHAR(60) NOT NULL` | Matches the length of category names in the DW |
 | SalesTerritory | `NVARCHAR(60) NOT NULL` | Matches dim.Customer.SalesTerritory |
 | TotalRevenue, TotalGrossProfit | `DECIMAL(18,2) NOT NULL DEFAULT 0` | Financial amounts; 2 decimal places |
 | InvoiceCount, CustomerCount, SalesLineCount | `INT NOT NULL DEFAULT 0` | Counts; non-negative |
@@ -315,7 +318,7 @@ For each table, identify all constraints needed to enforce the business rules:
 - PK on CategoryKey
 - UNIQUE on CategoryName — no duplicate category names
 - CHECK: MarginTier IN ('High', 'Medium', 'Low')
-- CHECK: IsActive IN (0, 1) — redundant with BIT but explicit
+- No CHECK on IsActive — the `BIT` data type already restricts it to 0 and 1 (or NULL, which `NOT NULL` prevents), so a CHECK would add nothing
 
 **`fact.ExecutiveSummary` constraints:**
 - PK on SummaryKey
@@ -323,7 +326,7 @@ For each table, identify all constraints needed to enforce the business rules:
 - FK: PeriodKey → dim.Period.PeriodKey
 - FK: CategoryKey → dim.ProductCategory.CategoryKey
 - CHECK: TotalRevenue >= 0
-- CHECK: TotalGrossProfit >= 0 (could also be negative if returns exceed sales — clarify with business)
+- No CHECK on TotalGrossProfit — gross profit can legitimately be negative for a territory and category in a month (returns exceeding sales, or sales below cost), so a `>= 0` rule would reject valid data
 - CHECK: InvoiceCount >= 0, CustomerCount >= 0, SalesLineCount >= 0
 
 ---
@@ -395,13 +398,13 @@ CREATE TABLE dim.Period
     FiscalYearNumber    SMALLINT        NOT NULL,
     FiscalQuarterNumber TINYINT         NOT NULL,
     QuarterLabel        NVARCHAR(12)    NOT NULL,   -- e.g., 'Q1 2024/25'
-    IsCurrentMonth      BIT             NOT NULL DEFAULT 0,
+    IsCurrentMonth      BIT             NOT NULL DEFAULT 0,   -- 1 = most recent complete month loaded
 
-    CONSTRAINT PK_Period                PRIMARY KEY (PeriodKey),
-    CONSTRAINT UQ_Period_CalYearMonth   UNIQUE (CalendarYear, MonthNumber),
-    CONSTRAINT CK_Period_MonthNum       CHECK (MonthNumber BETWEEN 1 AND 12),
-    CONSTRAINT CK_Period_CalYear        CHECK (CalendarYear BETWEEN 2000 AND 2100),
-    CONSTRAINT CK_Period_FiscalQtr      CHECK (FiscalQuarterNumber BETWEEN 1 AND 4)
+    CONSTRAINT PK_Period                     PRIMARY KEY (PeriodKey),
+    CONSTRAINT UQ_Period_CalendarYearMonth   UNIQUE (CalendarYear, MonthNumber),
+    CONSTRAINT CK_Period_MonthNumber         CHECK (MonthNumber BETWEEN 1 AND 12),
+    CONSTRAINT CK_Period_CalendarYear        CHECK (CalendarYear BETWEEN 2000 AND 2100),
+    CONSTRAINT CK_Period_FiscalQuarterNumber CHECK (FiscalQuarterNumber BETWEEN 1 AND 4)
 );
 GO
 
@@ -413,9 +416,9 @@ CREATE TABLE dim.ProductCategory
     MarginTier          NVARCHAR(10)    NOT NULL DEFAULT 'Medium',
     IsActive            BIT             NOT NULL DEFAULT 1,
 
-    CONSTRAINT PK_ProductCategory           PRIMARY KEY (CategoryKey),
-    CONSTRAINT UQ_ProductCategory_Name      UNIQUE (CategoryName),
-    CONSTRAINT CK_ProductCategory_Margin    CHECK (MarginTier IN ('High', 'Medium', 'Low'))
+    CONSTRAINT PK_ProductCategory              PRIMARY KEY (CategoryKey),
+    CONSTRAINT UQ_ProductCategory_CategoryName UNIQUE (CategoryName),
+    CONSTRAINT CK_ProductCategory_MarginTier   CHECK (MarginTier IN ('High', 'Medium', 'Low'))
 );
 GO
 
@@ -432,19 +435,19 @@ CREATE TABLE fact.ExecutiveSummary
     CustomerCount       INT             NOT NULL DEFAULT 0,
     SalesLineCount      INT             NOT NULL DEFAULT 0,
 
-    CONSTRAINT PK_ExecutiveSummary          PRIMARY KEY (SummaryKey),
-    CONSTRAINT UQ_ExecutiveSummary_Grain    UNIQUE (PeriodKey, CategoryKey, SalesTerritory),
-    CONSTRAINT FK_ExecSummary_Period
+    CONSTRAINT PK_ExecutiveSummary       PRIMARY KEY (SummaryKey),
+    CONSTRAINT UQ_ExecutiveSummary_Grain UNIQUE (PeriodKey, CategoryKey, SalesTerritory),
+    CONSTRAINT FK_ExecutiveSummary_Period
         FOREIGN KEY (PeriodKey)    REFERENCES dim.Period (PeriodKey),
-    CONSTRAINT FK_ExecSummary_Category
+    CONSTRAINT FK_ExecutiveSummary_ProductCategory
         FOREIGN KEY (CategoryKey)  REFERENCES dim.ProductCategory (CategoryKey),
-    CONSTRAINT CK_ExecSummary_Revenue
+    CONSTRAINT CK_ExecutiveSummary_TotalRevenue
         CHECK (TotalRevenue >= 0),
-    CONSTRAINT CK_ExecSummary_InvoiceCount
+    CONSTRAINT CK_ExecutiveSummary_InvoiceCount
         CHECK (InvoiceCount >= 0),
-    CONSTRAINT CK_ExecSummary_CustomerCount
+    CONSTRAINT CK_ExecutiveSummary_CustomerCount
         CHECK (CustomerCount >= 0),
-    CONSTRAINT CK_ExecSummary_SalesLineCount
+    CONSTRAINT CK_ExecutiveSummary_SalesLineCount
         CHECK (SalesLineCount >= 0)
 );
 GO
@@ -453,11 +456,11 @@ GO
 CREATE NONCLUSTERED INDEX IX_Period_FiscalYear
     ON dim.Period (FiscalYearNumber, FiscalQuarterNumber);
 
-CREATE NONCLUSTERED INDEX IX_ExecSummary_Period
+CREATE NONCLUSTERED INDEX IX_ExecutiveSummary_Period
     ON fact.ExecutiveSummary (PeriodKey)
     INCLUDE (SalesTerritory, TotalRevenue, TotalGrossProfit, InvoiceCount, CustomerCount);
 
-CREATE NONCLUSTERED INDEX IX_ExecSummary_Territory
+CREATE NONCLUSTERED INDEX IX_ExecutiveSummary_Territory
     ON fact.ExecutiveSummary (SalesTerritory, PeriodKey)
     INCLUDE (TotalRevenue, TotalGrossProfit, InvoiceCount);
 GO
@@ -529,10 +532,24 @@ With the schema in place, populate `CabotTrailExecutive` from the existing data 
 
 ### 10.1 Populate dim.Period
 
+> **Check your warehouse's column names.** Chapter 8 lists the year column of `Dimension.DimDate` as `CalendarYear`, while the Chapter 9 scripts use `YearNumber`. Run this query against `CabotTrailOutdoorDW` and use the names it returns:
+>
+> ```sql
+> SELECT COLUMN_NAME, DATA_TYPE
+> FROM   CabotTrailOutdoorDW.INFORMATION_SCHEMA.COLUMNS
+> WHERE  TABLE_SCHEMA = 'Dimension' AND TABLE_NAME = 'DimDate'
+> ORDER BY ORDINAL_POSITION;
+> ```
+
 ```sql
 USE CabotTrailExecutive;
 
--- Load all distinct year/month combinations from the DW fact table
+-- Load window: January 2022 through the last complete month.
+-- Each script declares the window itself. If you run several scripts together, keep a GO between them.
+DECLARE @FirstDateKey INT = 20220101;
+DECLARE @LastDateKey  INT = CONVERT(INT, CONVERT(CHAR(8), EOMONTH(GETDATE(), -1), 112));  -- e.g. 20261031
+
+-- Load one row per year/month from the DW date dimension
 INSERT INTO dim.Period
 (
     CalendarYear, MonthNumber, MonthName, YearMonthLabel,
@@ -550,14 +567,13 @@ SELECT DISTINCT
     'Q' + CAST(d.FiscalQuarterNumber AS NVARCHAR(1))
         + ' ' + CAST(d.FiscalYearNumber AS NVARCHAR(4))
         + '/' + RIGHT(CAST(d.FiscalYearNumber + 1 AS NVARCHAR(4)), 2) AS QuarterLabel,
-    -- Flag the current month
-    CASE WHEN d.YearNumber = YEAR(GETDATE())
-          AND d.MonthNumber = MONTH(GETDATE())
+    -- Flag the most recent complete month in the load window
+    CASE WHEN d.DateKey / 100 = @LastDateKey / 100
          THEN 1 ELSE 0 END AS IsCurrentMonth
 FROM    CabotTrailOutdoorDW.Dimension.DimDate d
-WHERE   d.YearNumber BETWEEN 2022 AND YEAR(GETDATE())
+WHERE   d.DateKey BETWEEN @FirstDateKey AND @LastDateKey
 GROUP BY d.YearNumber, d.MonthNumber, d.MonthName,
-         d.FiscalYearNumber, d.FiscalQuarterNumber
+         d.FiscalYearNumber, d.FiscalQuarterNumber, d.DateKey / 100
 ORDER BY d.YearNumber, d.MonthNumber;
 ```
 
@@ -590,6 +606,11 @@ ORDER BY pc.ProductCategoryName;
 ```sql
 -- The main summary load: aggregate from DW FactSales
 -- This is the source-to-target script for the executive summary
+-- Load window: January 2022 through the last complete month.
+-- Each script declares the window itself. If you run several scripts together, keep a GO between them.
+DECLARE @FirstDateKey INT = 20220101;
+DECLARE @LastDateKey  INT = CONVERT(INT, CONVERT(CHAR(8), EOMONTH(GETDATE(), -1), 112));  -- e.g. 20261031
+
 INSERT INTO fact.ExecutiveSummary
 (
     PeriodKey, CategoryKey, SalesTerritory,
@@ -624,10 +645,10 @@ INNER JOIN dim.Period p
     AND p.MonthNumber = d.MonthNumber
 INNER JOIN dim.ProductCategory cat
     ON cat.CategoryName = dpc.ProductCategoryName
--- Exclude unknown members and 2026 open orders
+-- Exclude unknown members and the current, incomplete month
 WHERE   fs.CustomerKey <> 0
 AND     fs.ProductKey  <> 0
-AND     d.YearNumber   < 2026     -- Exclude open/incomplete year
+AND     fs.OrderDateKey BETWEEN @FirstDateKey AND @LastDateKey
 GROUP BY
     p.PeriodKey,
     cat.CategoryKey,
@@ -653,9 +674,10 @@ UNION ALL
 SELECT 'fact.ExecutiveSummary', COUNT(*) FROM fact.ExecutiveSummary;
 
 -- Expected:
--- dim.Period: 48 rows (12 months × 4 years)
+-- dim.Period: one row per month from January 2022 through the last complete month
+--   (for example, 58 rows when loaded on 1 November 2026)
 -- dim.ProductCategory: 13 rows
--- fact.ExecutiveSummary: up to 48 × 13 × 10 = 6,240 rows
+-- fact.ExecutiveSummary: up to (dim.Period rows) × 13 categories × 10 territories
 --   (fewer if some territory/category combinations have no sales in some months)
 ```
 
@@ -663,13 +685,18 @@ SELECT 'fact.ExecutiveSummary', COUNT(*) FROM fact.ExecutiveSummary;
 
 ```sql
 -- Total revenue in ExecutiveSummary must match total revenue in the DW FactSales
+-- Load window: January 2022 through the last complete month.
+-- Each script declares the window itself. If you run several scripts together, keep a GO between them.
+DECLARE @FirstDateKey INT = 20220101;
+DECLARE @LastDateKey  INT = CONVERT(INT, CONVERT(CHAR(8), EOMONTH(GETDATE(), -1), 112));  -- e.g. 20261031
+
 SELECT
     'DW FactSales'              AS Source,
     ROUND(SUM(LineTotal), 2)    AS TotalRevenue
 FROM    CabotTrailOutdoorDW.Fact.FactSales
 WHERE   CustomerKey <> 0
 AND     ProductKey  <> 0
-AND     OrderDateKey / 10000 < 2026   -- Match the WHERE filter used in the load
+AND     OrderDateKey BETWEEN @FirstDateKey AND @LastDateKey   -- Same window as the load
 
 UNION ALL
 
@@ -680,6 +707,8 @@ FROM    fact.ExecutiveSummary;
 
 -- Both values must be equal (within $0.01 tolerance for rounding)
 ```
+
+A reconciliation is only valid if the source query applies **exactly the same filters and joins** as the load. The load in §10.3 also excludes rows through its joins — for example, products whose category is the unknown member. If the totals differ, first check whether the difference is made up of rows the load excluded on purpose. Review Question 4 asks you to diagnose exactly this kind of mismatch.
 
 ### 11.3 Testing the YoY View
 
@@ -742,12 +771,24 @@ CabotTrailExecutive
 
 `CabotTrailExecutive` is loaded from the DW after the nightly DW load completes. The monthly load runs on the first of each month:
 
-1. **Truncate** all three tables
+1. **Clear** all three tables: `TRUNCATE` the fact table, then `DELETE` from both dimensions and reset their IDENTITY values (SQL Server cannot truncate a table that a foreign key references)
 2. **Reload** `dim.Period` from the DW calendar
 3. **Reload** `dim.ProductCategory` from the DW product dimension
 4. **Reload** `fact.ExecutiveSummary` from the DW fact table
 5. **Verify** revenue reconciliation
 6. **Alert** on failure
+
+The order matters. `fact.ExecutiveSummary` has foreign keys to both dimensions, so SQL Server refuses `TRUNCATE TABLE dim.Period` (error 4712) even when the fact table is empty. Clear the fact table first, then the dimensions:
+
+```sql
+TRUNCATE TABLE fact.ExecutiveSummary;    -- allowed: no table references the fact table
+
+DELETE FROM dim.Period;
+DELETE FROM dim.ProductCategory;
+
+DBCC CHECKIDENT ('dim.Period', RESEED, 0);           -- next PeriodKey will be 1
+DBCC CHECKIDENT ('dim.ProductCategory', RESEED, 0);  -- next CategoryKey will be 1
+```
 
 ### 12.2 The SSIS Package Design
 
@@ -756,9 +797,9 @@ In DBAS 2103, you will build the SSIS package for this load. Its structure follo
 ```
 Master_Executive_Load.dtsx
     ↓
-[Execute SQL: TRUNCATE dim.Period]
-[Execute SQL: TRUNCATE dim.ProductCategory]
 [Execute SQL: TRUNCATE fact.ExecutiveSummary]
+[Execute SQL: DELETE dim.Period; DBCC CHECKIDENT reseed]
+[Execute SQL: DELETE dim.ProductCategory; DBCC CHECKIDENT reseed]
     ↓
 [Data Flow: Load dim.Period]
     ↓

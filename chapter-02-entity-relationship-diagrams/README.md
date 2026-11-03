@@ -535,7 +535,8 @@ LOYALTY_TRANSACTION
 ├── TransactionDate
 ├── PointsAmount (positive = earned, negative = redeemed)
 ├── TransactionType ('EARN' or 'REDEEM')
-└── SalesLineID (FK → fact.Sales — nullable, for earn transactions)
+├── RewardID (FK → Reward — nullable, for redeem transactions)
+└── InvoiceID (FK → Sales.Invoices — nullable, for earn transactions)
 
 REWARD
 ├── RewardID (PK)
@@ -553,7 +554,7 @@ TIER
 
 ### 10.4 Step 3: Identify Relationships
 
-- `Customer` *has* one `LoyaltyAccount` (1:1 — each customer has exactly one account)
+- `Customer` *has* one `LoyaltyAccount` (1:1 — each customer has at most one account)
 - `LoyaltyAccount` *has* many `LoyaltyTransactions` (1:N)
 - `LoyaltyTransaction` *may redeem* one `Reward` (optional — earn transactions have no reward) (1:N from Reward)
 - `LoyaltyAccount` *is in* one `Tier` (N:1 from LoyaltyAccount to Tier)
@@ -564,8 +565,9 @@ For each relationship, ask in both directions:
 
 **Customer ↔ LoyaltyAccount:**
 - "Can a customer have more than one loyalty account?" — per the narrative, no: one account per customer.
+- "Can a customer exist without a loyalty account?" — yes: existing customers have no account until they join the programme.
 - "Can a loyalty account exist without a customer?" — no: the account belongs to a customer.
-- Result: 1:1, mandatory both sides.
+- Result: 1:1, optional on the Customer side, mandatory on the LoyaltyAccount side.
 
 **LoyaltyAccount ↔ LoyaltyTransaction:**
 - "Can an account have zero transactions?" — yes, a new account has no transactions yet.
@@ -665,7 +667,7 @@ For the CabotTrail OLTP, an ERD generated from the schema (using SSMS's Database
    c. `Employee` ↔ `SalesOrder` (employees take sales orders)
    d. `Product` ↔ `Color`
 
-3. In the Loyalty Programme ERD from section 10, `LoyaltyTransaction` was identified as a weak entity. Explain why, and describe what the composite primary key would look like in the physical model.
+3. Is `LoyaltyTransaction` in the Loyalty Programme ERD from section 10 a weak entity? Explain your reasoning, and describe what its composite primary key would look like in the physical model if it were implemented without a surrogate key.
 
 4. Draw (or describe in text notation) the ERD for the following narrative:
    > "CabotTrail sells products. Each product belongs to at least one category, and each category may contain many products. A product has a name, a unit price, and a weight. Each product is supplied by exactly one supplier, but a supplier may supply many products."

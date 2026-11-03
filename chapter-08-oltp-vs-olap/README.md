@@ -315,6 +315,15 @@ FROM Dimension.DimDate
 ORDER BY DateKey;
 ```
 
+> **Check your warehouse's column names.** Chapter 8 lists the year column of `Dimension.DimDate` as `CalendarYear`, while the Chapter 9 scripts use `YearNumber`. Run this query against `CabotTrailOutdoorDW` and use the names it returns:
+>
+> ```sql
+> SELECT COLUMN_NAME, DATA_TYPE
+> FROM   CabotTrailOutdoorDW.INFORMATION_SCHEMA.COLUMNS
+> WHERE  TABLE_SCHEMA = 'Dimension' AND TABLE_NAME = 'DimDate'
+> ORDER BY ORDINAL_POSITION;
+> ```
+
 The date dimension is populated once for a wide range of dates (CabotTrail has 4,017 rows spanning 2022–2032) and never updated. Its integer `DateKey` (YYYYMMDD format) is used as the FK on the fact table — allowing date range filters without converting dates to integers at query time.
 
 ### 6.3 The Unknown Member
@@ -548,7 +557,7 @@ Data Marts:
     CabotTrailOutdoorsPurchasing — 5 tables — Purchasing analysis
     CabotTrailOutdoorsInventory  — 5 tables — Inventory analysis
     CabotTrailOutdoorsTransactions — 6 tables — Financial transactions
-    CabotTrailExecutive          — 4 tables — Executive summary (Chapter 9)
+    CabotTrailExecutive          — 3 tables + 1 view — Executive summary (Chapter 9)
          │
          ↓
 BI Tools (Power BI, Excel, SQL queries)

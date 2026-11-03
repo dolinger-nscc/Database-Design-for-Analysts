@@ -404,7 +404,7 @@ CONSTRAINT UQ_ProductCategoryAssignments
 As covered in Chapter 3, a UNIQUE constraint on the FK column of a 1:1 relationship enforces the maximum cardinality of one:
 
 ```sql
--- An employee has at most one loyalty account
+-- A customer has at most one loyalty account
 CONSTRAINT UQ_LoyaltyAccounts_CustomerID
     UNIQUE (CustomerID)
 -- Without this, multiple accounts per customer would be possible
@@ -477,7 +477,7 @@ CHECK can enforce that a column contains only specific allowed values:
 
 ```sql
 -- Transaction type must be EARN or REDEEM
-CONSTRAINT CK_LoyaltyTxn_Type
+CONSTRAINT CK_LoyaltyTransactions_TransactionType
     CHECK (TransactionType IN ('EARN', 'REDEEM'))
 
 -- Credit rating must be one of the valid ratings
@@ -496,7 +496,7 @@ CHECK constraints can express conditional business rules:
 ```sql
 -- If TransactionType is EARN, PointsAmount must be positive
 -- If TransactionType is REDEEM, PointsAmount must be negative
-CONSTRAINT CK_LoyaltyTxn_PointsDirection
+CONSTRAINT CK_LoyaltyTransactions_PointsDirection
     CHECK (
         (TransactionType = 'EARN'   AND PointsAmount > 0) OR
         (TransactionType = 'REDEEM' AND PointsAmount < 0)
@@ -667,7 +667,7 @@ SELECT name FROM sys.foreign_keys WHERE parent_object_id = OBJECT_ID('Sales.Orde
 -- Then use the cryptic name in the DROP statement
 ```
 
-**Documentation:** Named constraints are self-documenting. Reading `CK_LoyaltyTxn_PointsDirection` tells a developer what the constraint governs. Reading `CK__LoyaltyTrans__Points__7D2E4F12` tells them nothing.
+**Documentation:** Named constraints are self-documenting. Reading `CK_LoyaltyTransactions_PointsDirection` tells a developer what the constraint governs. Reading `CK__LoyaltyTrans__Points__7D2E4F12` tells them nothing.
 
 ---
 

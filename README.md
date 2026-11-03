@@ -90,9 +90,9 @@ Contact: Patrick.Dolinger@nscc.ca
 ---
 
 *This is the second book in a three-part series:*
-- *[SQL for Analysts](../sql-for-analysts/README.md)*
+- *SQL for Analysts*
 - ***Database Design for Analysts*** *(this book)*
-- *[ETL for Business Intelligence](../etl-for-business-intelligence/README.md)*
+- *ETL for Business Intelligence*
 
 ---
 

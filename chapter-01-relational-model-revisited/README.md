@@ -402,13 +402,11 @@ Reading the schema systematically, the OLTP has these core entity groups:
 
 **Sales domain:**
 ```
-Countries ──── StateProvinces ──── Cities
-                                        │
-                                   Customers ──── Orders ──── OrderLines
-                                        │              │
-                                   Invoices ──────────┘
-                                        │
-                                   InvoiceLines ──── Returns
+Customers ──── Orders ──── OrderLines
+    │              │
+Invoices ──────────┘
+    │
+InvoiceLines ──── Returns
 ```
 
 **Purchasing domain:**
@@ -421,10 +419,14 @@ Suppliers ──── PurchaseOrders ──── PurchaseOrderLines
 ProductCategories ─── ProductCategoryAssignments ─── Products ─── ProductHoldings
 ```
 
-**Application domain (shared lookups):**
+**Application domain (shared lookups and geography):**
 ```
+Countries ──── StateProvinces ──── Cities ──── (Sales.Customers.DeliveryCityID)
+
 Employees ── People ── DeliveryMethods ── PackageTypes ── Colors ── PaymentMethods
 ```
+
+The geography tables live in the `Application` schema (`Application.Countries`, `Application.StateProvinces`, `Application.Cities`); `Sales.Customers` references them through `DeliveryCityID`. The domain grouping is a reading aid — the schema name is what you use in queries.
 
 Notice that `People` is a shared entity — both `Customers` and `Employees` reference it (or share its attributes). This is a **supertype/subtype** relationship — a design pattern covered in Chapter 2.
 

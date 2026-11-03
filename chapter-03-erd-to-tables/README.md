@@ -190,7 +190,7 @@ CREATE TABLE Inventory.ProductCategories
     ProductCategoryID   INT             NOT NULL IDENTITY(1,1),
     ProductCategoryName NVARCHAR(60)    NOT NULL,
 
-    CONSTRAINT PK_ProductCategories PRIMARY KEY (ProductCategoryID),
+    CONSTRAINT PK_ProductCategories   PRIMARY KEY (ProductCategoryID),
     CONSTRAINT UQ_ProductCategoryName UNIQUE (ProductCategoryName)
 );
 
@@ -383,7 +383,7 @@ CREATE TABLE HR.EmployeeParkingPermits
     CONSTRAINT PK_EmployeeParkingPermits PRIMARY KEY (PermitID),
     CONSTRAINT FK_Permit_Employee
         FOREIGN KEY (EmployeeID) REFERENCES Application.Employees (EmployeeID),
-    CONSTRAINT UQ_Permit_Employee UNIQUE (EmployeeID)
+    CONSTRAINT UQ_Permit_Employee        UNIQUE (EmployeeID)
     -- The UNIQUE constraint on EmployeeID enforces the "at most one permit per employee" rule
 );
 ```
@@ -437,7 +437,7 @@ CREATE TABLE Inventory.ProductCategoryAssignments
     ProductCategoryID   INT     NOT NULL,
 
     CONSTRAINT PK_ProductCategoryAssignments PRIMARY KEY (AssignmentID),
-    CONSTRAINT UQ_PCA_Combination UNIQUE (ProductID, ProductCategoryID),
+    CONSTRAINT UQ_PCA_Combination            UNIQUE (ProductID, ProductCategoryID),
     CONSTRAINT FK_PCA_Product
         FOREIGN KEY (ProductID) REFERENCES Inventory.Products (ProductID),
     CONSTRAINT FK_PCA_ProductCategory
@@ -485,7 +485,7 @@ CREATE TABLE Application.Employees
     HireDate        DATE            NULL,
     IsActive        BIT             NOT NULL DEFAULT 1,
 
-    CONSTRAINT PK_Employees PRIMARY KEY (EmployeeID),
+    CONSTRAINT PK_Employees        PRIMARY KEY (EmployeeID),
     CONSTRAINT FK_Employees_Person
         FOREIGN KEY (PersonID) REFERENCES Application.People (PersonID),
     CONSTRAINT UQ_Employees_Person UNIQUE (PersonID)
@@ -663,9 +663,9 @@ CREATE TABLE Sales.LoyaltyTiers
     MinimumPoints       INT             NOT NULL DEFAULT 0,
     BenefitDescription  NVARCHAR(200)   NULL,
 
-    CONSTRAINT PK_LoyaltyTiers      PRIMARY KEY (TierID),
-    CONSTRAINT UQ_LoyaltyTiers_Name UNIQUE (TierName),
-    CONSTRAINT CK_LoyaltyTiers_MinPts CHECK (MinimumPoints >= 0)
+    CONSTRAINT PK_LoyaltyTiers               PRIMARY KEY (TierID),
+    CONSTRAINT UQ_LoyaltyTiers_TierName      UNIQUE (TierName),
+    CONSTRAINT CK_LoyaltyTiers_MinimumPoints CHECK (MinimumPoints >= 0)
 );
 GO
 
@@ -678,8 +678,8 @@ CREATE TABLE Sales.LoyaltyRewards
     PointCost           INT             NOT NULL,
     IsAvailable         BIT             NOT NULL DEFAULT 1,
 
-    CONSTRAINT PK_LoyaltyRewards        PRIMARY KEY (RewardID),
-    CONSTRAINT CK_LoyaltyRewards_Cost   CHECK (PointCost > 0)
+    CONSTRAINT PK_LoyaltyRewards           PRIMARY KEY (RewardID),
+    CONSTRAINT CK_LoyaltyRewards_PointCost CHECK (PointCost > 0)
 );
 GO
 ```
@@ -697,13 +697,13 @@ CREATE TABLE Sales.LoyaltyAccounts
     TierID              TINYINT         NOT NULL,   -- FK → LoyaltyTiers
     AccountOpenedDate   DATE            NOT NULL DEFAULT GETDATE(),
 
-    CONSTRAINT PK_LoyaltyAccounts       PRIMARY KEY (AccountID),
-    CONSTRAINT UQ_LoyaltyAccounts_Cust  UNIQUE (CustomerID),   -- Enforces 1:1
-    CONSTRAINT FK_LoyaltyAccounts_Cust
+    CONSTRAINT PK_LoyaltyAccounts              PRIMARY KEY (AccountID),
+    CONSTRAINT UQ_LoyaltyAccounts_CustomerID   UNIQUE (CustomerID),   -- Enforces 1:1
+    CONSTRAINT FK_LoyaltyAccounts_Customers
         FOREIGN KEY (CustomerID) REFERENCES Sales.Customers (CustomerID),
-    CONSTRAINT FK_LoyaltyAccounts_Tier
+    CONSTRAINT FK_LoyaltyAccounts_LoyaltyTiers
         FOREIGN KEY (TierID) REFERENCES Sales.LoyaltyTiers (TierID),
-    CONSTRAINT CK_LoyaltyAccounts_Bal   CHECK (PointBalance >= 0)
+    CONSTRAINT CK_LoyaltyAccounts_PointBalance CHECK (PointBalance >= 0)
 );
 GO
 ```
@@ -725,15 +725,15 @@ CREATE TABLE Sales.LoyaltyTransactions
     Notes               NVARCHAR(200)   NULL,
 
     CONSTRAINT PK_LoyaltyTransactions PRIMARY KEY (TransactionID),
-    CONSTRAINT FK_LoyaltyTxn_Account
+    CONSTRAINT FK_LoyaltyTransactions_LoyaltyAccounts
         FOREIGN KEY (AccountID) REFERENCES Sales.LoyaltyAccounts (AccountID),
-    CONSTRAINT FK_LoyaltyTxn_Reward
+    CONSTRAINT FK_LoyaltyTransactions_LoyaltyRewards
         FOREIGN KEY (RewardID) REFERENCES Sales.LoyaltyRewards (RewardID),
-    CONSTRAINT FK_LoyaltyTxn_Invoice
+    CONSTRAINT FK_LoyaltyTransactions_Invoices
         FOREIGN KEY (InvoiceID) REFERENCES Sales.Invoices (InvoiceID),
-    CONSTRAINT CK_LoyaltyTxn_Type
+    CONSTRAINT CK_LoyaltyTransactions_TransactionType
         CHECK (TransactionType IN ('EARN', 'REDEEM')),
-    CONSTRAINT CK_LoyaltyTxn_EarnPos
+    CONSTRAINT CK_LoyaltyTransactions_PointsDirection
         CHECK (
             (TransactionType = 'EARN'   AND PointsAmount > 0) OR
             (TransactionType = 'REDEEM' AND PointsAmount < 0)
